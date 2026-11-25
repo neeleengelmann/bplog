@@ -48,6 +48,9 @@
   td .note { color:var(--muted); font-size:12px; }
   td .tag { color:var(--imp); font-size:12px; }
   textarea#csv { height:120px; font:12px monospace; margin-top:8px; display:none; }
+  details.chk { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+  details.chk summary { font-size:15px; cursor:pointer; }
+  details.chk label.check { font-size:15px; margin:10px 0; }
   .confirm { display:none; margin-top:8px; }
   .confirm.show { display:grid; }
 </style>
@@ -92,6 +95,10 @@
         <option value="wrist">Wrist</option>
       </select>
     </div>
+    <details class="chk" id="chkBox">
+      <summary>Checklist (optional) <span id="chkCount"></span></summary>
+      <div id="chkList"></div>
+    </details>
     <div class="field">
       <label class="check"><input id="arr" type="checkbox"> Device showed arrhythmia warning</label>
     </div>
@@ -138,6 +145,11 @@
   let mode = 'new';
   let offset = null; // { ms, device_now, real_now }
 
+  const CHECKS = [
+    ['chk_no_food_30min', 'No eating, drinking or exercise in the 30 min before'],
+    ['chk_rest_5min', 'Sat quietly for 5 min before measuring'],
+    ['chk_correct_position', 'Correct measuring position'],
+  ];
   const $ = id => document.getElementById(id);
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function fmtLocal(d) {
@@ -218,11 +230,12 @@
   }
 
   function toCSV() {
-    const head = 'measured_at,systolic,diastolic,pulse,site,arrhythmia_warning,comment,source,device_time,clock_offset_min,entered_at';
+    const head = ['measured_at','systolic','diastolic','pulse','site','arrhythmia_warning','comment','source','device_time','clock_offset_min','entered_at', ...CHECKS.map(c => c[0])].join(',');
     const q = v => { v = v ?? ''; v = String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     return [head, ...mem.map(r => [
       r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.arrhythmia_warning ?? '',
-      r.comment, r.source || 'manual', r.device_time, r.clock_offset_min, r.entered_at
+      r.comment, r.source || 'manual', r.device_time, r.clock_offset_min, r.entered_at,
+      ...CHECKS.map(([k]) => r[k])
     ].map(q).join(','))].join('\n');
   }
 
@@ -236,6 +249,15 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  $('chkList').innerHTML = CHECKS.map(([k, t]) => `<label class="check"><input type="checkbox" data-chk="${k}"> ${t}</label>`).join('');
+  const chkInputs = () => [...document.querySelectorAll('[data-chk]')];
+  function updateChk() {
+    const n = chkInputs().filter(i => i.checked).length;
+    $('chkCount').textContent = n ? `(${n}/${CHECKS.length})` : '';
+  }
+  $('site').addEventListener('change', updateChk);
+  $('chkList').addEventListener('change', updateChk);
 
   $('tabNew').addEventListener('click', () => setMode('new'));
   $('tabImp').addEventListener('click', () => setMode('imp'));
@@ -266,6 +288,7 @@
       site: $('site').value,
       arrhythmia_warning: $('arr').checked ? 1 : 0,
       comment: $('note').value.trim(),
+      ...Object.fromEntries(CHECKS.map(([k]) => [k, document.querySelector(`[data-chk="${k}"]`).checked ? 1 : 0])),
       source: imp ? 'device_memory' : 'manual',
       device_time: imp ? tsv : '',
       clock_offset_min: imp ? Math.round(offset.ms / 60000) : '',
@@ -274,7 +297,7 @@
     mem.push(entry);
     save();
     try { localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
-    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('note').value = '';
+    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('note').value = ''; chkInputs().forEach(i => i.checked = false); updateChk();
     $('msg').className = 'msg';
     if (imp) {
       // keep the device time so the next reading only needs small edits; no auto-download per imported row
@@ -315,6 +338,7 @@
   load();
   try { const st = localStorage.getItem(KEY + '_site'); if (st) $('site').value = st; } catch (e) {}
   setMode('new');
+  updateChk();
   render();
 </script>
 </body>
