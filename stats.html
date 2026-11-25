@@ -127,6 +127,7 @@
       <h2>Compare groups</h2>
       <select id="grp">
         <option value="site">by device</option>
+        <option value="dev">by device name</option>
         <option value="tod">by time of day</option>
         <option value="src">by source</option>
         <option value="chk">by checklist</option>
@@ -186,7 +187,7 @@
     const o = {
       measured_at: String(r.measured_at || '').slice(0, 16),
       systolic: num(r.systolic), diastolic: num(r.diastolic), pulse: num(r.pulse),
-      site: r.site || '', arrhythmia_warning: num(r.arrhythmia_warning) || 0, position_warning: num(r.position_warning),
+      site: r.site || '', arrhythmia_warning: num(r.arrhythmia_warning) || 0, position_warning: num(r.position_warning), device_name: r.device_name || '',
       comment: r.comment || '', source: r.source || 'manual',
       device_time: r.device_time || '', entered_at: r.entered_at || ''
     };
@@ -240,7 +241,8 @@
     src: r => r.source === 'device_memory' ? 'Imported' : 'New',
     chk: r => chkState(r),
     arr: r => r.arrhythmia_warning ? 'Warning' : 'No warning',
-    pos: r => r.position_warning ? 'Position warning' : 'No position warning'
+    pos: r => r.position_warning ? 'Position warning' : 'No position warning',
+    dev: r => r.device_name || '(no name)'
   };
   const ORDER = ['Upper arm', 'Wrist', 'Morning', 'Afternoon', 'Evening', 'Night', 'New', 'Imported', 'All 3 ticked', 'Not all ticked', 'No checklist', 'No warning', 'Warning', 'No position warning', 'Position warning', 'Unknown'];
 
@@ -314,7 +316,7 @@
   }
   function tipHTML(r) {
     return `<b>${esc(r.measured_at.replace('T', ' '))}</b><br>${r.systolic}/${r.diastolic}${r.pulse != null ? ' · pulse ' + r.pulse : ''}` +
-      `<br>${siteName(r.site)} · ${tod(r)}${r.source === 'device_memory' ? ' · imported' : ''}${r.arrhythmia_warning ? ' · ⚠ arrhythmia' : ''}${r.position_warning ? ' · position warning' : ''}` +
+      `<br>${siteName(r.site)}${r.device_name ? ' (' + esc(r.device_name) + ')' : ''} · ${tod(r)}${r.source === 'device_memory' ? ' · imported' : ''}${r.arrhythmia_warning ? ' · ⚠ arrhythmia' : ''}${r.position_warning ? ' · position warning' : ''}` +
       (r.comment ? `<br><i>${esc(r.comment)}</i>` : '');
   }
   function attachTip(box, pts, guideX) {
@@ -418,7 +420,7 @@
 
   function tableAll(rows) {
     $('tAll').innerHTML = `<tr><th>Time</th><th>BP</th><th>Pulse</th><th>Device</th><th>Source</th><th>Checklist</th><th>Comment</th></tr>` +
-      [...rows].reverse().map(r => `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td><td>${siteName(r.site)}</td><td>${r.source === 'device_memory' ? 'Imported' : 'New'}</td><td>${chkState(r) === 'No checklist' ? '' : CHK.filter(k => r[k] === 1).length + '/3'}</td><td>${esc(r.comment)}</td></tr>`).join('');
+      [...rows].reverse().map(r => `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td><td>${siteName(r.site)}${r.device_name ? '<br><span style="color:var(--muted)">' + esc(r.device_name) + '</span>' : ''}</td><td>${r.source === 'device_memory' ? 'Imported' : 'New'}</td><td>${chkState(r) === 'No checklist' ? '' : CHK.filter(k => r[k] === 1).length + '/3'}</td><td>${esc(r.comment)}</td></tr>`).join('');
   }
 
   /* ---------- test: regression on daily means with AR(1) errors ---------- */

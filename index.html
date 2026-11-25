@@ -97,6 +97,11 @@
         <option value="wrist">Wrist</option>
       </select>
     </div>
+    <div class="field">
+      <label for="devname">Device name</label>
+      <input id="devname" list="devnames" autocomplete="off" placeholder="e.g. Beurer BM 25">
+      <datalist id="devnames"></datalist>
+    </div>
     <details class="chk" id="chkBox">
       <summary>Checklist (optional) <span id="chkCount"></span></summary>
       <div id="chkList"></div>
@@ -146,6 +151,7 @@
   let mem = [];
   let storageOk = true;
   let mode = 'new';
+  let lastDev = {};
   let offset = null; // { ms, device_now, real_now }
 
   const CHECKS = [
@@ -233,12 +239,12 @@
   }
 
   function toCSV() {
-    const head = ['measured_at','systolic','diastolic','pulse','site','arrhythmia_warning','comment','source','device_time','clock_offset_min','entered_at', ...CHECKS.map(c => c[0]), 'position_warning'].join(',');
+    const head = ['measured_at','systolic','diastolic','pulse','site','arrhythmia_warning','comment','source','device_time','clock_offset_min','entered_at', ...CHECKS.map(c => c[0]), 'position_warning', 'device_name'].join(',');
     const q = v => { v = v ?? ''; v = String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     return [head, ...mem.map(r => [
       r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.arrhythmia_warning ?? '',
       r.comment, r.source || 'manual', r.device_time, r.clock_offset_min, r.entered_at,
-      ...CHECKS.map(([k]) => r[k]), r.position_warning ?? ''
+      ...CHECKS.map(([k]) => r[k]), r.position_warning ?? '', r.device_name
     ].map(q).join(','))].join('\n');
   }
 
@@ -291,6 +297,7 @@
       site: $('site').value,
       arrhythmia_warning: $('arr').checked ? 1 : 0,
       position_warning: $('posw').checked ? 1 : 0,
+      device_name: $('devname').value.trim(),
       comment: $('note').value.trim(),
       ...Object.fromEntries(CHECKS.map(([k]) => [k, document.querySelector(`[data-chk="${k}"]`).checked ? 1 : 0])),
       source: imp ? 'device_memory' : 'manual',
@@ -301,6 +308,8 @@
     mem.push(entry);
     save();
     try { localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
+    if (entry.device_name) { lastDev[entry.site] = entry.device_name; try { localStorage.setItem(KEY + '_devname', JSON.stringify(lastDev)); } catch (e) {} }
+    fillDevNames();
     $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('posw').checked = false; $('note').value = ''; chkInputs().forEach(i => i.checked = false); updateChk();
     $('msg').className = 'msg';
     if (imp) {
@@ -341,6 +350,16 @@
   if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {}); }
   load();
   try { const st = localStorage.getItem(KEY + '_site'); if (st) $('site').value = st; } catch (e) {}
+  try { lastDev = JSON.parse(localStorage.getItem(KEY + '_devname') || '{}') || {}; } catch (e) { lastDev = {}; }
+  // default device name = last one used for the selected type
+  function fillDevNames() {
+    const site = $('site').value;
+    const names = [...new Set(mem.filter(r => r.site === site && r.device_name).map(r => r.device_name))];
+    $('devnames').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+  }
+  $('site').addEventListener('change', () => { $('devname').value = lastDev[$('site').value] || ''; fillDevNames(); });
+  $('devname').value = lastDev[$('site').value] || '';
+  fillDevNames();
   setMode('new');
   updateChk();
   render();
