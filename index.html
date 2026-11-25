@@ -20,6 +20,8 @@
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
   label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
   input, select { width:100%; font-size:18px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  label.check { display:flex; align-items:center; gap:10px; font-size:16px; color:var(--fg); }
+  label.check input { width:22px; height:22px; margin:0; }
   .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px; }
   .row > div { min-width:0; }
   .field { margin-bottom:10px; }
@@ -44,10 +46,6 @@
   <div class="sub">Test version. Entries are stored only in this browser on this device. Nothing is sent anywhere.</div>
 
   <form class="card" id="f">
-    <div class="field">
-      <label for="pid">Participant ID</label>
-      <input id="pid" autocomplete="off" required>
-    </div>
     <div class="row">
       <div><label for="sys">Systolic</label><input id="sys" type="number" inputmode="numeric" min="50" max="260" required></div>
       <div><label for="dia">Diastolic</label><input id="dia" type="number" inputmode="numeric" min="30" max="160" required></div>
@@ -60,6 +58,9 @@
         <option value="upper_arm">Upper arm</option>
         <option value="wrist">Wrist</option>
       </select>
+    </div>
+    <div class="field">
+      <label class="check"><input id="arr" type="checkbox"> Device showed arrhythmia warning</label>
     </div>
     <div class="field">
       <label for="ts">Time of measurement</label>
@@ -114,7 +115,7 @@
   function render() {
     const rows = [...mem].sort((a, b) => b.measured_at.localeCompare(a.measured_at));
     $('list').innerHTML = rows.length ? rows.map(r =>
-      `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}</td><td>${r.pulse ?? ''}</td><td>${r.site === 'wrist' ? 'Wrist' : r.site === 'upper_arm' ? 'Arm' : ''}</td>` +
+      `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td><td>${r.site === 'wrist' ? 'Wrist' : r.site === 'upper_arm' ? 'Arm' : ''}</td>` +
       `<td class="x"><button data-id="${r.id}">✕</button></td></tr>`).join('')
       : '<tr><td colspan="5" style="color:var(--muted)">No entries yet</td></tr>';
     if (!storageOk) {
@@ -124,28 +125,27 @@
   }
 
   function toCSV() {
-    const head = 'participant_id,measured_at,systolic,diastolic,pulse,site,entered_at';
+    const head = 'measured_at,systolic,diastolic,pulse,site,arrhythmia_warning,entered_at';
     const q = v => { v = v ?? ''; v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-    return [head, ...mem.map(r => [r.participant_id, r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.entered_at].map(q).join(','))].join('\n');
+    return [head, ...mem.map(r => [r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.arrhythmia_warning ?? '', r.entered_at].map(q).join(','))].join('\n');
   }
 
   $('f').addEventListener('submit', e => {
     e.preventDefault();
     const sys = +$('sys').value, dia = +$('dia').value;
     if (dia >= sys) { $('msg').className = 'msg err'; $('msg').textContent = 'Diastolic should be lower than systolic.'; return; }
-    const pid = $('pid').value.trim();
     mem.push({
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      participant_id: pid,
       measured_at: $('ts').value,
       systolic: sys, diastolic: dia,
       pulse: $('pul').value === '' ? null : +$('pul').value,
       site: $('site').value,
+      arrhythmia_warning: $('arr').checked ? 1 : 0,
       entered_at: new Date().toISOString()
     });
     save();
-    try { localStorage.setItem(KEY + '_pid', pid); localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
-    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('ts').value = nowLocal();
+    try { localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
+    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('ts').value = nowLocal();
     $('msg').className = 'msg'; $('msg').textContent = 'Saved. Backup CSV downloaded.';
     render();
     downloadCSV();
@@ -185,7 +185,7 @@
 
   if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch (e) {} }
   load();
-  try { $('pid').value = localStorage.getItem(KEY + '_pid') || ''; const st = localStorage.getItem(KEY + '_site'); if (st) $('site').value = st; } catch (e) {}
+  try { const st = localStorage.getItem(KEY + '_site'); if (st) $('site').value = st; } catch (e) {}
   $('ts').value = nowLocal();
   render();
 </script>
