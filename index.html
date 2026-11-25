@@ -146,8 +146,9 @@
     save();
     try { localStorage.setItem(KEY + '_pid', pid); localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
     $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('ts').value = nowLocal();
-    $('msg').className = 'msg'; $('msg').textContent = 'Saved.';
+    $('msg').className = 'msg'; $('msg').textContent = 'Saved. Backup CSV downloaded.';
     render();
+    downloadCSV();
   });
 
   $('list').addEventListener('click', e => {
@@ -163,14 +164,17 @@
     catch (e) { $('csv').select(); $('msg2').className = 'msg'; $('msg2').textContent = 'Select the text below and copy it manually.'; }
   });
 
-  $('dl').addEventListener('click', () => {
+  function downloadCSV() {
     const blob = new Blob([toCSV()], {type: 'text/csv'});
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'bp-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+    const url = URL.createObjectURL(blob);
+    const d = new Date(), z = n => String(n).padStart(2, '0');
+    a.href = url;
+    a.download = `bp-log-${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}-${z(d.getMinutes())}-${z(d.getSeconds())}.csv`;
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  $('dl').addEventListener('click', downloadCSV);
 
   $('clear').addEventListener('click', () => $('confirm').classList.add('show'));
   $('no').addEventListener('click', () => $('confirm').classList.remove('show'));
