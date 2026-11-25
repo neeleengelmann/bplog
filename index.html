@@ -8,18 +8,21 @@
 <meta name="theme-color" content="#2563eb">
 <link rel="icon" href="icon-192.png">
 <style>
-  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --line:#ddd; --accent:#2563eb; --card:#fff; --warn:#b91c1c; }
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --line:#ddd; --accent:#2563eb; --card:#fff; --warn:#b91c1c; --imp:#7c3aed; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#141414; --fg:#eee; --muted:#9a9a9a; --line:#333; --accent:#60a5fa; --card:#1e1e1e; --warn:#f87171; }
+    :root { --bg:#141414; --fg:#eee; --muted:#9a9a9a; --line:#333; --accent:#60a5fa; --card:#1e1e1e; --warn:#f87171; --imp:#a78bfa; }
   }
   * { box-sizing:border-box; }
   body { margin:0; font:16px/1.4 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   main { max-width:480px; margin:0 auto; padding:16px; }
   h1 { font-size:20px; margin:4px 0 2px; }
-  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:12px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .card.imp { border-color:var(--imp); }
   label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
-  input, select { width:100%; font-size:18px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  input, select, textarea { width:100%; font-size:18px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); font-family:inherit; }
+  textarea { font-size:16px; resize:vertical; min-height:44px; }
   label.check { display:flex; align-items:center; gap:10px; font-size:16px; color:var(--fg); }
   label.check input { width:22px; height:22px; margin:0; }
   .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px; }
@@ -27,15 +30,24 @@
   .field { margin-bottom:10px; }
   button { font-size:16px; padding:12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); width:100%; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .imp button.primary { background:var(--imp); border-color:var(--imp); }
   .btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .tabs { display:grid; grid-template-columns:1fr 1fr; gap:0; margin-bottom:14px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .tabs button { border:0; border-radius:0; background:var(--card); }
+  .tabs button.on { background:var(--accent); color:#fff; font-weight:600; }
+  .tabs button.on.imp-tab { background:var(--imp); }
   .msg { font-size:14px; min-height:20px; margin-top:8px; }
   .msg.err { color:var(--warn); }
+  .hint { font-size:14px; color:var(--imp); margin-top:-4px; margin-bottom:10px; min-height:18px; }
+  .hidden { display:none !important; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--muted); font-weight:500; }
   td.x { text-align:right; }
   td.x button { width:auto; padding:2px 8px; font-size:13px; }
-  textarea { width:100%; height:120px; font:12px monospace; margin-top:8px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px; display:none; }
+  td .note { color:var(--muted); font-size:12px; }
+  td .tag { color:var(--imp); font-size:12px; }
+  textarea#csv { height:120px; font:12px monospace; margin-top:8px; display:none; }
   .confirm { display:none; margin-top:8px; }
   .confirm.show { display:grid; }
 </style>
@@ -43,9 +55,30 @@
 <body>
 <main>
   <h1>Blood pressure log</h1>
-  <div class="sub">Test version. Entries are stored only in this browser on this device. Nothing is sent anywhere.</div>
+  <div class="sub">Entries are stored only in this browser on this device. Nothing is sent anywhere.</div>
+
+  <div class="tabs">
+    <button id="tabNew" class="on" type="button">New measurement</button>
+    <button id="tabImp" class="imp-tab" type="button">Import old device</button>
+  </div>
+
+  <!-- Clock correction, import mode only -->
+  <div class="card imp hidden" id="offsetCard">
+    <h2>1. Correct the old device's clock</h2>
+    <div class="field">
+      <label for="devNow">Time the old device shows right now</label>
+      <input id="devNow" type="datetime-local">
+    </div>
+    <div class="field">
+      <label for="realNow">Real time right now</label>
+      <input id="realNow" type="datetime-local">
+    </div>
+    <button class="primary" id="setOffset" type="button">Save clock correction</button>
+    <div class="msg" id="offsetMsg"></div>
+  </div>
 
   <form class="card" id="f">
+    <h2 id="formTitle" class="hidden">2. Enter stored readings</h2>
     <div class="row">
       <div><label for="sys">Systolic</label><input id="sys" type="number" inputmode="numeric" min="50" max="260" required></div>
       <div><label for="dia">Diastolic</label><input id="dia" type="number" inputmode="numeric" min="30" max="160" required></div>
@@ -63,10 +96,15 @@
       <label class="check"><input id="arr" type="checkbox"> Device showed arrhythmia warning</label>
     </div>
     <div class="field">
-      <label for="ts">Time of measurement</label>
+      <label for="ts" id="tsLabel">Time of measurement</label>
       <input id="ts" type="datetime-local" required>
     </div>
-    <button class="primary" type="submit">Save entry</button>
+    <div class="hint hidden" id="corrHint"></div>
+    <div class="field">
+      <label for="note">Comment (optional)</label>
+      <textarea id="note" rows="2"></textarea>
+    </div>
+    <button class="primary" type="submit" id="saveBtn">Save entry</button>
     <div class="msg" id="msg"></div>
   </form>
 
@@ -94,75 +132,99 @@
 
 <script>
   const KEY = 'bp_entries_v1';
+  const OFFSET_KEY = KEY + '_offset';
   let mem = [];
   let storageOk = true;
+  let mode = 'new';
+  let offset = null; // { ms, device_now, real_now }
+
+  const $ = id => document.getElementById(id);
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function fmtLocal(d) {
+    const z = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+  }
+  function nowLocal() { return fmtLocal(new Date()); }
+  function fmtOffset(ms) {
+    const sign = ms >= 0 ? '+' : '-';
+    let m = Math.round(Math.abs(ms) / 60000);
+    const d = Math.floor(m / 1440); m -= d * 1440;
+    const h = Math.floor(m / 60); m -= h * 60;
+    const parts = [];
+    if (d) parts.push(d + ' d'); if (h) parts.push(h + ' h'); parts.push(m + ' min');
+    return sign + parts.join(' ');
+  }
+  function corrected(devStr) { return fmtLocal(new Date(new Date(devStr).getTime() + offset.ms)); }
 
   function load() {
     try { mem = JSON.parse(localStorage.getItem(KEY) || '[]'); }
     catch (e) { storageOk = false; mem = []; }
+    try { offset = JSON.parse(localStorage.getItem(OFFSET_KEY) || 'null'); } catch (e) { offset = null; }
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(mem)); }
     catch (e) { storageOk = false; }
   }
-  function nowLocal() {
-    const d = new Date(); d.setSeconds(0, 0);
-    return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  }
-  const $ = id => document.getElementById(id);
-  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function siteLabel(s) { return s === 'wrist' ? 'Wrist' : s === 'upper_arm' ? 'Arm' : ''; }
 
   function render() {
     const rows = [...mem].sort((a, b) => b.measured_at.localeCompare(a.measured_at));
     $('list').innerHTML = rows.length ? rows.map(r =>
-      `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td><td>${r.site === 'wrist' ? 'Wrist' : r.site === 'upper_arm' ? 'Arm' : ''}</td>` +
+      `<tr><td>${esc(r.measured_at.replace('T', ' '))}` +
+      (r.source === 'device_memory' ? `<br><span class="tag">imported</span>` : '') +
+      (r.comment ? `<br><span class="note">${esc(r.comment)}</span>` : '') + `</td>` +
+      `<td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td>` +
+      `<td>${siteLabel(r.site)}</td>` +
       `<td class="x"><button data-id="${r.id}">✕</button></td></tr>`).join('')
       : '<tr><td colspan="5" style="color:var(--muted)">No entries yet</td></tr>';
     if (!storageOk) {
       $('msg2').className = 'msg err';
-      $('msg2').textContent = 'Browser storage unavailable: entries will be lost when the page closes. Copy the CSV before leaving.';
+      $('msg2').textContent = 'Browser storage unavailable: entries will be lost when the page closes. Download the CSV before leaving.';
+    }
+  }
+
+  function updateHint() {
+    if (mode !== 'imp') return;
+    if (!offset) { $('corrHint').textContent = 'Save the clock correction above first.'; return; }
+    const v = $('ts').value;
+    $('corrHint').textContent = v ? `Real time: ${corrected(v).replace('T', ' ')} (correction ${fmtOffset(offset.ms)})` : `Correction ${fmtOffset(offset.ms)} will be applied.`;
+  }
+
+  function showOffset() {
+    $('offsetMsg').className = 'msg';
+    $('offsetMsg').textContent = offset ? `Saved. Old device clock correction: ${fmtOffset(offset.ms)}.` : '';
+  }
+
+  function setMode(m) {
+    mode = m;
+    const imp = m === 'imp';
+    $('tabNew').classList.toggle('on', !imp);
+    $('tabImp').classList.toggle('on', imp);
+    $('offsetCard').classList.toggle('hidden', !imp);
+    $('formTitle').classList.toggle('hidden', !imp);
+    $('corrHint').classList.toggle('hidden', !imp);
+    $('f').classList.toggle('imp', imp);
+    $('tsLabel').textContent = imp ? 'Date and time as shown on the old device' : 'Time of measurement';
+    $('saveBtn').textContent = imp ? 'Save imported reading' : 'Save entry';
+    $('msg').textContent = '';
+    if (imp) {
+      $('realNow').value = nowLocal();
+      if (!$('devNow').value && offset) $('devNow').value = offset.device_now;
+      showOffset(); updateHint();
+    } else {
+      $('ts').value = nowLocal();
     }
   }
 
   function toCSV() {
-    const head = 'measured_at,systolic,diastolic,pulse,site,arrhythmia_warning,entered_at';
-    const q = v => { v = v ?? ''; v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-    return [head, ...mem.map(r => [r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.arrhythmia_warning ?? '', r.entered_at].map(q).join(','))].join('\n');
+    const head = 'measured_at,systolic,diastolic,pulse,site,arrhythmia_warning,comment,source,device_time,clock_offset_min,entered_at';
+    const q = v => { v = v ?? ''; v = String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    return [head, ...mem.map(r => [
+      r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.arrhythmia_warning ?? '',
+      r.comment, r.source || 'manual', r.device_time, r.clock_offset_min, r.entered_at
+    ].map(q).join(','))].join('\n');
   }
-
-  $('f').addEventListener('submit', e => {
-    e.preventDefault();
-    const sys = +$('sys').value, dia = +$('dia').value;
-    if (dia >= sys) { $('msg').className = 'msg err'; $('msg').textContent = 'Diastolic should be lower than systolic.'; return; }
-    mem.push({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      measured_at: $('ts').value,
-      systolic: sys, diastolic: dia,
-      pulse: $('pul').value === '' ? null : +$('pul').value,
-      site: $('site').value,
-      arrhythmia_warning: $('arr').checked ? 1 : 0,
-      entered_at: new Date().toISOString()
-    });
-    save();
-    try { localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
-    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('ts').value = nowLocal();
-    $('msg').className = 'msg'; $('msg').textContent = 'Saved. Backup CSV downloaded.';
-    render();
-    downloadCSV();
-  });
-
-  $('list').addEventListener('click', e => {
-    const id = e.target.dataset && e.target.dataset.id;
-    if (!id) return;
-    mem = mem.filter(r => r.id !== id); save(); render();
-  });
-
-  $('copy').addEventListener('click', async () => {
-    const csv = toCSV();
-    $('csv').value = csv; $('csv').style.display = 'block';
-    try { await navigator.clipboard.writeText(csv); $('msg2').className = 'msg'; $('msg2').textContent = `Copied ${mem.length} entries.`; }
-    catch (e) { $('csv').select(); $('msg2').className = 'msg'; $('msg2').textContent = 'Select the text below and copy it manually.'; }
-  });
 
   function downloadCSV() {
     const blob = new Blob([toCSV()], {type: 'text/csv'});
@@ -174,7 +236,73 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  $('tabNew').addEventListener('click', () => setMode('new'));
+  $('tabImp').addEventListener('click', () => setMode('imp'));
+
+  $('setOffset').addEventListener('click', () => {
+    const dv = $('devNow').value, rv = $('realNow').value;
+    if (!dv || !rv) { $('offsetMsg').className = 'msg err'; $('offsetMsg').textContent = 'Fill in both times.'; return; }
+    offset = { ms: new Date(rv) - new Date(dv), device_now: dv, real_now: rv };
+    try { localStorage.setItem(OFFSET_KEY, JSON.stringify(offset)); } catch (e) {}
+    showOffset(); updateHint();
+  });
+
+  $('ts').addEventListener('input', updateHint);
+
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    const sys = +$('sys').value, dia = +$('dia').value;
+    const err = t => { $('msg').className = 'msg err'; $('msg').textContent = t; };
+    if (dia >= sys) return err('Diastolic should be lower than systolic.');
+    const imp = mode === 'imp';
+    if (imp && !offset) return err('Save the clock correction first.');
+    const tsv = $('ts').value;
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      measured_at: imp ? corrected(tsv) : tsv,
+      systolic: sys, diastolic: dia,
+      pulse: $('pul').value === '' ? null : +$('pul').value,
+      site: $('site').value,
+      arrhythmia_warning: $('arr').checked ? 1 : 0,
+      comment: $('note').value.trim(),
+      source: imp ? 'device_memory' : 'manual',
+      device_time: imp ? tsv : '',
+      clock_offset_min: imp ? Math.round(offset.ms / 60000) : '',
+      entered_at: new Date().toISOString()
+    };
+    mem.push(entry);
+    save();
+    try { localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
+    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('note').value = '';
+    $('msg').className = 'msg';
+    if (imp) {
+      // keep the device time so the next reading only needs small edits; no auto-download per imported row
+      $('msg').textContent = `Imported (${mem.filter(r => r.source === 'device_memory').length} so far). Tap Download CSV when done.`;
+      updateHint();
+      $('sys').focus();
+    } else {
+      $('ts').value = nowLocal();
+      $('msg').textContent = 'Saved. Backup CSV downloaded.';
+    }
+    render();
+    if (!imp) downloadCSV();
+  });
+
+  $('list').addEventListener('click', e => {
+    const id = e.target.dataset && e.target.dataset.id;
+    if (!id) return;
+    mem = mem.filter(r => r.id !== id); save(); render();
+  });
+
   $('dl').addEventListener('click', downloadCSV);
+
+  $('copy').addEventListener('click', async () => {
+    const csv = toCSV();
+    $('csv').value = csv; $('csv').style.display = 'block';
+    try { await navigator.clipboard.writeText(csv); $('msg2').className = 'msg'; $('msg2').textContent = `Copied ${mem.length} entries.`; }
+    catch (e) { $('csv').select(); $('msg2').className = 'msg'; $('msg2').textContent = 'Select the text below and copy it manually.'; }
+  });
 
   $('clear').addEventListener('click', () => $('confirm').classList.add('show'));
   $('no').addEventListener('click', () => $('confirm').classList.remove('show'));
@@ -183,10 +311,10 @@
     $('msg2').className = 'msg'; $('msg2').textContent = 'All entries deleted.'; render();
   });
 
-  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch (e) {} }
+  if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {}); }
   load();
   try { const st = localStorage.getItem(KEY + '_site'); if (st) $('site').value = st; } catch (e) {}
-  $('ts').value = nowLocal();
+  setMode('new');
   render();
 </script>
 </body>
