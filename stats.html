@@ -17,6 +17,33 @@
       --accent:#60a5fa; --s1:#338ced; --s2:#e76624; --ref:#777; --warn:#f87171;
     }
   }
+
+  #report { display:none; }
+  @media print {
+    :root { color-scheme: light; --bg:#fafafa; --card:#ffffff; --fg:#191919; --muted:#666666; --line:#e2e2e2; --grid:#ececec; --accent:#2563eb; --s1:#257de0; --s2:#f47230; --ref:#9a9a9a; --warn:#b91c1c; }
+    body { background:#fff; }
+    body > main { display:none !important; }
+    #report { display:block; }
+    @page { margin:14mm; }
+  }
+  .rep { -webkit-print-color-adjust:exact; print-color-adjust:exact; font:11pt/1.45 -apple-system, system-ui, 'Segoe UI', sans-serif; color:var(--fg); max-width:760px; margin:0 auto; }
+  .rep h1 { font-size:18pt; margin:0 0 2px; }
+  .rep h2 { font-size:13pt; margin:18px 0 6px; padding-bottom:3px; border-bottom:1px solid var(--line); break-after:avoid; }
+  .rep .meta { color:var(--muted); font-size:9.5pt; margin-bottom:6px; }
+  .rep .sec { break-inside:avoid; }
+  .rep table { width:100%; border-collapse:collapse; font-size:10pt; font-variant-numeric:tabular-nums; }
+  .rep th, .rep td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .rep th { color:var(--muted); font-weight:500; }
+  .rep .kv td:first-child { color:var(--muted); width:42%; }
+  .rep .interp { font-size:10.5pt; background:#f4f6fb; border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin-top:8px; }
+  .rep .interp p { margin:0 0 4px; } .rep .interp p:last-child { margin:0; }
+  .rep .legend { display:flex; gap:14px; font-size:9.5pt; margin:2px 0 4px; color:var(--fg); }
+  .rep .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .rep .sw { width:9px; height:9px; border-radius:50%; display:inline-block; }
+  .rep svg { width:100%; height:auto; display:block; }
+  .rep svg text { fill:var(--muted); font-size:11px; }
+  .rep .cap { color:var(--muted); font-size:9pt; margin:4px 0 0; }
+  .rep .sig { font-weight:600; }
   a.nav { display:inline-block; font-size:15px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; color:var(--accent); text-decoration:none; background:var(--card); margin-bottom:12px; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.4 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
@@ -105,6 +132,15 @@
   </div>
 
   <div class="card">
+    <div class="loadrow">
+      <button class="primary" id="repPdf">Report (PDF)</button>
+      <button id="repHtml">Report (HTML)</button>
+      <button id="expData">Data (CSV)</button>
+    </div>
+    <div class="msg" id="expMsg">Exports use the current filters, grouping and change point. For PDF, choose "Save as PDF" as printer.</div>
+  </div>
+
+  <div class="card">
     <div class="tiles" id="tiles"></div>
     <div class="interp" id="sumTxt"></div>
     <p class="cap" style="margin-top:8px">Mean ± SD. "≥ 135/85": share of readings with systolic ≥ 135 or diastolic ≥ 85 (common reference value for home measurements).</p>
@@ -158,6 +194,7 @@
     </details>
   </div>
 </main>
+<div id="report"></div>
 
 <script>
   const KEY = 'bp_entries_v1';
@@ -189,7 +226,7 @@
       systolic: num(r.systolic), diastolic: num(r.diastolic), pulse: num(r.pulse),
       site: r.site || '', arrhythmia_warning: num(r.arrhythmia_warning) || 0, position_warning: num(r.position_warning), device_name: r.device_name || '',
       comment: r.comment || '', source: r.source || 'manual',
-      device_time: r.device_time || '', entered_at: r.entered_at || ''
+      device_time: r.device_time || '', clock_offset_min: r.clock_offset_min ?? '', entered_at: r.entered_at || ''
     };
     CHK.forEach(k => o[k] = num(r[k]));
     o.t = new Date(o.measured_at);
@@ -341,8 +378,7 @@
     return `<svg viewBox="0 0 ${W} ${H}" role="img">${inner}<line class="cross" y1="${M.t}" y2="${H - M.b}" stroke="var(--muted)" stroke-width="1" style="display:none"/><g class="hi"></g></svg><div class="tip"></div>`;
   }
 
-  function chartTime(rows) {
-    const box = $('cTime');
+  function chartTime(rows, box = $('cTime')) {
     if (!rows.length) { box.innerHTML = '<div class="empty">No readings</div>'; return; }
     const Y = yScale(rows);
     let t0 = +rows[0].t, t1 = +rows[rows.length - 1].t;
@@ -368,8 +404,7 @@
     attachTip(box, pts, true);
   }
 
-  function chartHour(rows) {
-    const box = $('cHour');
+  function chartHour(rows, box = $('cHour')) {
     if (!rows.length) { box.innerHTML = '<div class="empty">No readings</div>'; return; }
     const Y = yScale(rows);
     const hr = r => r.t.getHours() + r.t.getMinutes() / 60;
@@ -493,19 +528,18 @@
   const fp = p => isNaN(p) ? '–' : p < 0.001 ? '< .001' : '= ' + p.toFixed(3).replace(/^0/, '');
   const sgn = x => (x > 0 ? '+' : '') + f1(x);
 
-  function tests(rows) {
-    const out = $('tOut'), cut = $('tDate').value;
+  function fitModel(rows, cut) {
     const m = new Map();
     rows.forEach(r => { const d = r.measured_at.slice(0, 10); if (!m.has(d)) m.set(d, []); m.get(d).push(r); });
     const D = [...m.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([d, g]) => ({ d, s: st(g.map(r => r.systolic)).m, dia: st(g.map(r => r.diastolic)).m }));
     const n = D.length;
-    if (n < 10) { out.innerHTML = `<div class="empty">Needs at least 10 days with readings (now ${n}).</div>`; return; }
+    if (n < 10) return { err: `Needs at least 10 days with readings (now ${n}).` };
     const day0 = Date.parse(D[0].d), days = D.map(x => Math.round((Date.parse(x.d) - day0) / 864e5));
     let X, labels;
     if (cut) {
       const c = Math.round((Date.parse(cut) - day0) / 864e5);
       const nb = days.filter(t => t < c).length, na = n - nb;
-      if (nb < 5 || na < 5) { out.innerHTML = `<div class="empty">Needs at least 5 days before and 5 from the change point (now ${nb} and ${na}).</div>`; return; }
+      if (nb < 5 || na < 5) return { err: `Needs at least 5 days before and 5 from the change point (now ${nb} and ${na}).` };
       X = days.map(t => [1, t - c, +(t >= c), Math.max(0, t - c)]);
       labels = [null, ['Trend before', 30], ['Jump at change point', 1], ['Change in trend', 30]];
     } else {
@@ -513,7 +547,15 @@
       labels = [null, ['Trend', 30]];
     }
     const res = [['Systolic', D.map(x => x.s)], ['Diastolic', D.map(x => x.dia)]].map(([name, y]) => [name, arReg(days, X, y)]);
-    if (res.some(r => !r[1])) { out.innerHTML = '<div class="empty">Model could not be fitted.</div>'; return; }
+    if (res.some(r => !r[1])) return { err: 'Model could not be fitted.' };
+    return { n, labels, res };
+  }
+
+  function tests(rows) {
+    const out = $('tOut'), cut = $('tDate').value;
+    const M = fitModel(rows, cut);
+    if (M.err) { out.innerHTML = `<div class="empty">${M.err}</div>`; return; }
+    const { n, labels, res } = M;
     let h = `<div class="scroll"><table><tr><th></th><th>Systolic</th><th>Diastolic</th></tr>`;
     labels.forEach((l, j) => {
       if (!l) return;
@@ -549,6 +591,97 @@
   }
   $('tDate').addEventListener('change', update);
   $('tClr').addEventListener('click', () => { $('tDate').value = ''; update(); });
+
+  /* ---------- export ---------- */
+  const csvq = v => { v = v ?? ''; v = String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const toCsv = rows => rows.map(r => r.map(csvq).join(',')).join('\n');
+  const rnd = (x, d = 2) => x == null || isNaN(x) ? '' : Math.round(x * 10 ** d) / 10 ** d;
+  function stamp() { const d = new Date(), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}-${z(d.getMinutes())}`; }
+  function save(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function filterDesc() {
+    const sel = id => { const e = $(id); return e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value; };
+    return [['device', sel('fSite')], ['time_of_day', sel('fTod')], ['source', sel('fSrc')], ['arrhythmia_warning', sel('fArr')],
+            ['position_warning', sel('fPos')], ['checklist', sel('fChk')], ['date_from', $('fFrom').value || 'start'], ['date_to', $('fTo').value || 'end']];
+  }
+
+  function buildReport() {
+    const rows = filtered();
+    if (!rows.length) return null;
+    // render charts at a fixed print width, then restore the screen version
+    const keepW = W; W = 680;
+    const c1 = document.createElement('div'), c2 = document.createElement('div');
+    chartTime(rows, c1); chartHour(rows, c2); compare(rows);
+    const grpSvg = $('cGrp').innerHTML, grpTbl = $('tGrp').innerHTML;
+    W = keepW; update();
+    const strip = el => { el.querySelectorAll('.tip, .cross, .hi').forEach(n => n.remove()); return el.innerHTML; };
+    const S = st(rows.map(r => r.systolic)), D = st(rows.map(r => r.diastolic)), P = st(rows.map(r => r.pulse));
+    const days = new Set(rows.map(r => r.measured_at.slice(0, 10))).size;
+    const high = rows.filter(r => r.systolic >= 135 || r.diastolic >= 85).length;
+    const first = rows[0].measured_at.slice(0, 10), last = rows[rows.length - 1].measured_at.slice(0, 10);
+    const active = filterDesc().filter(([k, v]) => !['All', 'Include', 'start', 'end'].includes(v));
+    const fname = { device: 'Device', time_of_day: 'Time of day', source: 'Source', arrhythmia_warning: 'Arrhythmia warning', position_warning: 'Position warning', checklist: 'Checklist', date_from: 'From', date_to: 'To' };
+    const leg = extra => `<div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Systolic</span><span><i class="sw" style="background:var(--s2)"></i>Diastolic</span><span style="color:var(--muted)">${extra}</span></div>`;
+    const kv = (k, v) => `<tr><td>${k}</td><td>${v}</td></tr>`;
+    const grpLabel = $('grp').options[$('grp').selectedIndex].text;
+    const cut = $('tDate').value;
+    return `<div class="rep">
+      <h1>Blood pressure report</h1>
+      <div class="meta">Created ${new Date().toLocaleString()} · Data from ${first} to ${last}</div>
+      <div class="meta">Selection: ${active.length ? active.map(([k, v]) => `${fname[k]}: ${esc(v)}`).join(' · ') : 'all readings'}</div>
+
+      <div class="sec"><h2>Summary</h2>
+      <table class="kv">
+        ${kv('Readings / days', `${rows.length} / ${days}`)}
+        ${kv('Mean blood pressure', `${f0(S.m)}/${f0(D.m)} mmHg (SD ${f1(S.sd)} / ${f1(D.sd)})`)}
+        ${kv('Median', `${f0(S.med)}/${f0(D.med)} mmHg`)}
+        ${kv('Range systolic / diastolic', `${S.min}–${S.max} / ${D.min}–${D.max} mmHg`)}
+        ${kv('Mean pulse', P.n ? `${f0(P.m)} bpm (SD ${f1(P.sd)}, n = ${P.n})` : '–')}
+        ${kv('Readings ≥ 135 systolic or ≥ 85 diastolic', `${high} (${Math.round(100 * high / rows.length)}%)`)}
+        ${kv('Arrhythmia / position warnings', `${rows.filter(r => r.arrhythmia_warning).length} / ${rows.filter(r => r.position_warning).length}`)}
+      </table>
+      <div class="interp">${$('sumTxt').innerHTML}</div></div>
+
+      <div class="sec"><h2>Over time</h2>${leg('Lines: 7-day average · dashed: 135 / 85')}${strip(c1)}</div>
+      <div class="sec"><h2>By time of day</h2>${leg('Lines: hourly average')}${strip(c2)}</div>
+
+      <div class="sec"><h2>Groups: ${esc(grpLabel)}</h2>${leg('Dot: mean · bar: ± 1 SD')}${grpSvg}<table>${grpTbl}</table></div>
+
+      <div class="sec"><h2>Change over time${cut ? ' (change point ' + cut + ')' : ''}</h2>${$('tOut').innerHTML}
+      <p class="cap">Regression on daily averages with AR(1) errors (accounts for neighbouring days being similar). 95% CI in brackets.</p>
+      <p class="cap" style="margin-top:12px">135/85 mmHg is a common reference value for home measurements. This report is a statistical description, not a medical assessment.</p></div>
+    </div>`;
+  }
+  $('repPdf').addEventListener('click', () => {
+    const h = buildReport();
+    if (!h) { $('expMsg').textContent = 'Nothing to export: no readings in the current selection.'; return; }
+    $('report').innerHTML = h;
+    setTimeout(() => window.print(), 50);
+  });
+  $('repHtml').addEventListener('click', () => {
+    const h = buildReport();
+    if (!h) { $('expMsg').textContent = 'Nothing to export: no readings in the current selection.'; return; }
+    const css = [...document.querySelectorAll('style')].map(x => x.textContent).join('\n')
+      .replace(/@media \(prefers-color-scheme: dark\)[\s\S]*?\n  \}\n  \}/, '');
+    const doc = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Blood pressure report</title><style>${css}\nbody{background:#fff;padding:16px}</style></head><body>${h}</body></html>`;
+    const url = URL.createObjectURL(new Blob([doc], { type: 'text/html' }));
+    const a = document.createElement('a'); a.href = url; a.download = `bp-report-${stamp()}.html`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('expMsg').textContent = 'Report saved as HTML.';
+  });
+
+  $('expData').addEventListener('click', () => {
+    const rows = filtered();
+    if (!rows.length) { $('expMsg').textContent = 'Nothing to export: no readings in the current selection.'; return; }
+    const cols = ['measured_at', 'systolic', 'diastolic', 'pulse', 'site', 'device_name', 'arrhythmia_warning', 'position_warning', ...CHK,
+                  'comment', 'source', 'device_time', 'clock_offset_min', 'entered_at'];
+    const out = [[...cols, 'time_of_day']].concat(rows.map(r => [...cols.map(c => r[c]), tod(r)]));
+    save(`bp-data-${stamp()}.csv`, toCsv(out));
+    $('expMsg').textContent = `Exported ${rows.length} readings.`;
+  });
 
   function update() {
     W = Math.max(300, Math.round($('cTime').clientWidth || 700));
