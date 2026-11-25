@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BP Log Stats</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg:#fafafa; --card:#ffffff; --fg:#191919; --muted:#666666; --line:#e2e2e2; --grid:#ececec;
+    --accent:#2563eb; --s1:#257de0; --s2:#f47230; --ref:#9a9a9a; --warn:#b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg:#141414; --card:#191919; --fg:#efefef; --muted:#9c9c9c; --line:#333; --grid:#2a2a2a;
+      --accent:#60a5fa; --s1:#338ced; --s2:#e76624; --ref:#777; --warn:#f87171;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 2px; }
+  h2 { font-size:16px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:12px; }
+  .cap { color:var(--muted); font-size:12px; margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  button, select, input { font:inherit; font-size:15px; }
+  button { padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .loadrow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .msg { font-size:13px; color:var(--muted); margin-top:8px; }
+  .filters { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+  @media (min-width:620px) { .filters { grid-template-columns:repeat(4, minmax(0,1fr)); } }
+  .filters label { display:block; font-size:12px; color:var(--muted); margin-bottom:2px; }
+  .filters select, .filters input { width:100%; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  .tiles { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+  @media (min-width:620px) { .tiles { grid-template-columns:repeat(4, minmax(0,1fr)); } }
+  .tile { border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .tile .k { font-size:12px; color:var(--muted); }
+  .tile .v { font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .tile .d { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .legend { display:flex; gap:14px; font-size:13px; margin:2px 0 6px; flex-wrap:wrap; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .sw { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .chart { position:relative; }
+  svg { display:block; width:100%; height:auto; touch-action:pan-y; }
+  svg text { fill:var(--muted); font-size:11px; font-family:inherit; }
+  .tip { position:absolute; pointer-events:none; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,.15); display:none; white-space:nowrap; z-index:2; }
+  table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  .cmpHead { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
+  .cmpHead select { padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  .ctl { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0 10px; font-size:14px; }
+  .ctl select, .ctl input[type=date] { padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  .ctl label.cb { display:inline-flex; align-items:center; gap:6px; }
+  .res { font-size:14px; margin:8px 0; }
+  .res b { font-variant-numeric:tabular-nums; }
+  .sig { font-weight:600; }
+  .interp { font-size:14px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-top:8px; }
+  .interp p { margin:0 0 4px; }
+  .interp p:last-child { margin:0; }
+  h3 { font-size:14px; margin:12px 0 4px; }
+  details summary { cursor:pointer; font-weight:600; }
+  .scroll { overflow-x:auto; }
+  .empty { color:var(--muted); padding:20px 0; text-align:center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Blood pressure stats</h1>
+  <div class="sub">Everything is calculated on this device. Nothing is sent anywhere.</div>
+
+  <div class="card">
+    <div class="loadrow">
+      <button class="primary" id="usePhone">Use BP Log data on this phone</button>
+      <button id="pickBtn">Open CSV file(s)</button>
+      <input id="file" type="file" accept=".csv,text/csv" multiple hidden>
+      <button id="reset">Clear loaded data</button>
+    </div>
+    <div class="msg" id="loadMsg"></div>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <div><label for="fSite">Device</label>
+        <select id="fSite"><option value="">All</option><option value="upper_arm">Upper arm</option><option value="wrist">Wrist</option></select></div>
+      <div><label for="fTod">Time of day</label>
+        <select id="fTod"><option value="">All</option><option>Morning</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></div>
+      <div><label for="fSrc">Source</label>
+        <select id="fSrc"><option value="">All</option><option value="manual">New measurements</option><option value="device_memory">Imported old device</option></select></div>
+      <div><label for="fArr">Arrhythmia warning</label>
+        <select id="fArr"><option value="">Include</option><option value="0">Exclude</option><option value="1">Only these</option></select></div>
+      <div><label for="fChk">Checklist</label>
+        <select id="fChk"><option value="">All</option><option value="all">All 3 ticked</option><option value="notall">Not all ticked</option></select></div>
+      <div><label for="fFrom">From</label><input id="fFrom" type="date"></div>
+      <div><label for="fTo">To</label><input id="fTo" type="date"></div>
+      <div style="display:flex;align-items:flex-end"><button id="clearF" style="width:100%">Reset filters</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tiles" id="tiles"></div>
+    <div class="interp" id="sumTxt"></div>
+    <p class="cap" style="margin-top:8px">Mean ± SD. "≥ 135/85": share of readings with systolic ≥ 135 or diastolic ≥ 85 (common reference value for home measurements).</p>
+  </div>
+
+  <div class="card">
+    <h2>Over time</h2>
+    <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Systolic</span><span><i class="sw" style="background:var(--s2)"></i>Diastolic</span><span style="color:var(--muted)">Lines: 7-day average · dashed: 135 / 85</span></div>
+    <div class="chart" id="cTime"></div>
+  </div>
+
+  <div class="card">
+    <h2>By time of day</h2>
+    <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Systolic</span><span><i class="sw" style="background:var(--s2)"></i>Diastolic</span><span style="color:var(--muted)">Lines: hourly average</span></div>
+    <div class="chart" id="cHour"></div>
+  </div>
+
+  <div class="card">
+    <div class="cmpHead">
+      <h2>Compare groups</h2>
+      <select id="grp">
+        <option value="site">by device</option>
+        <option value="tod">by time of day</option>
+        <option value="src">by source</option>
+        <option value="chk">by checklist</option>
+        <option value="arr">by arrhythmia warning</option>
+      </select>
+    </div>
+    <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Systolic</span><span><i class="sw" style="background:var(--s2)"></i>Diastolic</span><span style="color:var(--muted)">Dot: mean · bar: ± 1 SD</span></div>
+    <div class="chart" id="cGrp"></div>
+    <div class="scroll"><table id="tGrp"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Changes over time (test)</h2>
+    <div class="ctl">
+      <span>Change point (optional)</span>
+      <input id="tDate" type="date">
+      <button id="tClr" type="button" style="padding:6px 10px">Clear</button>
+    </div>
+    <div id="tOut"></div>
+    <p class="cap" style="margin-top:8px">Regression on daily averages with AR(1) errors, which accounts for neighbouring days being similar. Uses the filtered data. Choose one device in the filter for a clean comparison.</p>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>All readings (table)</summary>
+      <div class="scroll"><table id="tAll"></table></div>
+    </details>
+  </div>
+</main>
+
+<script>
+  const KEY = 'bp_entries_v1';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const CHK = ['chk_no_food_30min', 'chk_rest_5min', 'chk_correct_position'];
+  let data = [];
+
+  /* ---------- loading ---------- */
+  function parseCSV(text) {
+    const rows = []; let row = [], f = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(f); f = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += c;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    const head = rows.shift() || [];
+    return rows.filter(r => r.length > 1).map(r => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
+  }
+  const num = v => (v === '' || v == null) ? null : +v;
+  function norm(r) {
+    const o = {
+      measured_at: String(r.measured_at || '').slice(0, 16),
+      systolic: num(r.systolic), diastolic: num(r.diastolic), pulse: num(r.pulse),
+      site: r.site || '', arrhythmia_warning: num(r.arrhythmia_warning) || 0,
+      comment: r.comment || '', source: r.source || 'manual',
+      device_time: r.device_time || '', entered_at: r.entered_at || ''
+    };
+    CHK.forEach(k => o[k] = num(r[k]));
+    o.t = new Date(o.measured_at);
+    return o;
+  }
+  function merge(list) {
+    const seen = new Set(data.map(keyOf));
+    let added = 0;
+    for (const r of list.map(norm)) {
+      if (!r.systolic || !r.diastolic || isNaN(r.t)) continue;
+      const k = keyOf(r); if (seen.has(k)) continue;
+      seen.add(k); data.push(r); added++;
+    }
+    data.sort((a, b) => a.t - b.t);
+    return added;
+  }
+  function keyOf(r) { return [r.measured_at, r.systolic, r.diastolic, r.entered_at].join('|'); }
+
+  $('usePhone').addEventListener('click', () => {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) {}
+    const n = merge(list);
+    $('loadMsg').textContent = list.length
+      ? `Added ${n} readings from BP Log on this phone (${list.length - n} already loaded). Total: ${data.length}.`
+      : 'No BP Log data found here. This page must be opened in the same browser and on the same site address as BP Log.';
+    update();
+  });
+  $('pickBtn').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', async e => {
+    let total = 0;
+    for (const f of e.target.files) total += merge(parseCSV(await f.text()));
+    $('loadMsg').textContent = `Added ${total} new readings from ${e.target.files.length} file(s). Duplicates are skipped, so overlapping backups are fine. Total: ${data.length}.`;
+    e.target.value = '';
+    update();
+  });
+  $('reset').addEventListener('click', () => { data = []; $('loadMsg').textContent = 'Loaded data cleared (BP Log itself is unchanged).'; update(); });
+
+  /* ---------- derived fields & filters ---------- */
+  function tod(r) { const h = r.t.getHours(); return h >= 5 && h < 11 ? 'Morning' : h >= 11 && h < 17 ? 'Afternoon' : h >= 17 && h < 22 ? 'Evening' : 'Night'; }
+  function chkState(r) {
+    const v = CHK.map(k => r[k]);
+    if (v.every(x => x == null)) return 'No checklist';
+    return v.every(x => x === 1) ? 'All 3 ticked' : 'Not all ticked';
+  }
+  const siteName = s => s === 'upper_arm' ? 'Upper arm' : s === 'wrist' ? 'Wrist' : 'Unknown';
+  const GROUPS = {
+    site: r => siteName(r.site),
+    tod: r => tod(r),
+    src: r => r.source === 'device_memory' ? 'Imported' : 'New',
+    chk: r => chkState(r),
+    arr: r => r.arrhythmia_warning ? 'Warning' : 'No warning'
+  };
+  const ORDER = ['Upper arm', 'Wrist', 'Morning', 'Afternoon', 'Evening', 'Night', 'New', 'Imported', 'All 3 ticked', 'Not all ticked', 'No checklist', 'No warning', 'Warning', 'Unknown'];
+
+  function filtered() {
+    const s = $('fSite').value, t = $('fTod').value, src = $('fSrc').value, a = $('fArr').value, c = $('fChk').value;
+    const from = $('fFrom').value, to = $('fTo').value;
+    return data.filter(r =>
+      (!s || r.site === s) && (!t || tod(r) === t) && (!src || r.source === src) &&
+      (a === '' || String(r.arrhythmia_warning) === a) &&
+      (!c || (c === 'all' ? chkState(r) === 'All 3 ticked' : chkState(r) === 'Not all ticked')) &&
+      (!from || r.measured_at.slice(0, 10) >= from) && (!to || r.measured_at.slice(0, 10) <= to));
+  }
+  ['fSite', 'fTod', 'fSrc', 'fArr', 'fChk', 'fFrom', 'fTo', 'grp'].forEach(id => $(id).addEventListener('change', update));
+  $('clearF').addEventListener('click', () => { ['fSite', 'fTod', 'fSrc', 'fArr', 'fChk', 'fFrom', 'fTo'].forEach(id => $(id).value = ''); update(); });
+
+  /* ---------- stats ---------- */
+  function st(arr) {
+    const v = arr.filter(x => x != null && !isNaN(x));
+    const n = v.length; if (!n) return { n: 0 };
+    const m = v.reduce((a, b) => a + b, 0) / n;
+    const sd = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / (n - 1)) : 0;
+    const s = [...v].sort((a, b) => a - b);
+    const med = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+    return { n, m, sd, med, min: s[0], max: s[n - 1] };
+  }
+  const f0 = x => x == null || isNaN(x) ? '–' : Math.round(x);
+  const f1 = x => x == null || isNaN(x) ? '–' : (Math.round(x * 10) / 10).toFixed(1);
+
+  function tiles(rows) {
+    const S = st(rows.map(r => r.systolic)), D = st(rows.map(r => r.diastolic)), P = st(rows.map(r => r.pulse));
+    const high = rows.filter(r => r.systolic >= 135 || r.diastolic >= 85).length;
+    const arr = rows.filter(r => r.arrhythmia_warning).length;
+    const days = new Set(rows.map(r => r.measured_at.slice(0, 10))).size;
+    const t = (k, v, d) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+    if (!rows.length) $('sumTxt').innerHTML = '<p>No readings in the current selection.</p>';
+    else {
+      const above = S.m >= 135 || D.m >= 85;
+      $('sumTxt').innerHTML = `<p>Across ${rows.length} reading${rows.length === 1 ? '' : 's'} on ${days} day${days === 1 ? '' : 's'}, the average is <b>${f0(S.m)}/${f0(D.m)} mmHg</b>, which is ${above ? '<b>at or above</b>' : 'below'} the home reference value of 135/85. ` +
+        `${Math.round(100 * high / rows.length)}% of single readings have systolic ≥ 135 or diastolic ≥ 85.` +
+        (days < 3 ? ' With fewer than 3 days, this average is not yet reliable.' : '') + `</p>` +
+        (arr ? `<p>${arr} reading${arr === 1 ? '' : 's'} had an arrhythmia warning.</p>` : '');
+    }
+    $('tiles').innerHTML =
+      t('Readings', rows.length, `${days} day${days === 1 ? '' : 's'}`) +
+      t('Mean BP', S.n ? `${f0(S.m)}/${f0(D.m)}` : '–', S.n ? `± ${f1(S.sd)} / ± ${f1(D.sd)} · median ${f0(S.med)}/${f0(D.med)}` : '') +
+      t('Mean pulse', P.n ? f0(P.m) : '–', P.n ? `± ${f1(P.sd)} · n = ${P.n}` : 'no pulse values') +
+      t('≥ 135/85', rows.length ? Math.round(100 * high / rows.length) + '%' : '–', `${high} reading${high === 1 ? '' : 's'} · ${arr} arrhythmia warning${arr === 1 ? '' : 's'}`);
+  }
+
+  /* ---------- charts ---------- */
+  let W = 700; const H = 240, M = { l: 34, r: 10, t: 10, b: 26 };
+  function yScale(rows) {
+    let lo = Math.min(80, ...rows.map(r => r.diastolic)), hi = Math.max(140, ...rows.map(r => r.systolic));
+    lo = Math.floor((lo - 5) / 10) * 10; hi = Math.ceil((hi + 5) / 10) * 10;
+    return { lo, hi, y: v => M.t + (H - M.t - M.b) * (1 - (v - lo) / (hi - lo)) };
+  }
+  function grid(Y) {
+    let g = '';
+    for (let v = Y.lo; v <= Y.hi; v += (Y.hi - Y.lo > 100 ? 20 : 10)) {
+      g += `<line x1="${M.l}" x2="${W - M.r}" y1="${Y.y(v)}" y2="${Y.y(v)}" stroke="var(--grid)" stroke-width="1"/>` +
+           `<text x="${M.l - 6}" y="${Y.y(v) + 4}" text-anchor="end">${v}</text>`;
+    }
+    [135, 85].forEach(v => { if (v > Y.lo && v < Y.hi) g += `<line x1="${M.l}" x2="${W - M.r}" y1="${Y.y(v)}" y2="${Y.y(v)}" stroke="var(--ref)" stroke-width="1" stroke-dasharray="4 4"/>`; });
+    return g;
+  }
+  const path = pts => pts.length ? 'M' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join('L') : '';
+  function dots(pts) {
+    return pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.ys.toFixed(1)}" r="4" fill="var(--s1)" stroke="var(--card)" stroke-width="2"/>` +
+                        `<circle cx="${p.x.toFixed(1)}" cy="${p.yd.toFixed(1)}" r="4" fill="var(--s2)" stroke="var(--card)" stroke-width="2"/>`).join('');
+  }
+  function tipHTML(r) {
+    return `<b>${esc(r.measured_at.replace('T', ' '))}</b><br>${r.systolic}/${r.diastolic}${r.pulse != null ? ' · pulse ' + r.pulse : ''}` +
+      `<br>${siteName(r.site)} · ${tod(r)}${r.source === 'device_memory' ? ' · imported' : ''}${r.arrhythmia_warning ? ' · ⚠ arrhythmia' : ''}` +
+      (r.comment ? `<br><i>${esc(r.comment)}</i>` : '');
+  }
+  function attachTip(box, pts, guideX) {
+    const svg = box.querySelector('svg'), tip = box.querySelector('.tip'), cross = svg.querySelector('.cross'), hi = svg.querySelector('.hi');
+    function at(ev) {
+      const rc = svg.getBoundingClientRect();
+      const sx = (ev.clientX - rc.left) * W / rc.width, sy = (ev.clientY - rc.top) * H / rc.height;
+      let best = null, bd = Infinity;
+      for (const p of pts) { const d = Math.hypot(p.x - sx, Math.min(Math.abs(p.ys - sy), Math.abs(p.yd - sy)) * 0.5); if (d < bd) { bd = d; best = p; } }
+      if (!best || bd > 40) return hide();
+      if (guideX) { cross.setAttribute('x1', best.x); cross.setAttribute('x2', best.x); cross.style.display = ''; }
+      hi.innerHTML = `<circle cx="${best.x}" cy="${best.ys}" r="6" fill="none" stroke="var(--fg)" stroke-width="2"/><circle cx="${best.x}" cy="${best.yd}" r="6" fill="none" stroke="var(--fg)" stroke-width="2"/>`;
+      tip.innerHTML = tipHTML(best.r); tip.style.display = 'block';
+      const px = best.x * rc.width / W, tw = tip.offsetWidth;
+      tip.style.left = Math.max(0, Math.min(rc.width - tw, px - tw / 2)) + 'px';
+      tip.style.top = Math.max(0, best.ys * rc.height / H - tip.offsetHeight - 10) + 'px';
+    }
+    function hide() { tip.style.display = 'none'; hi.innerHTML = ''; if (cross) cross.style.display = 'none'; }
+    svg.addEventListener('pointermove', at); svg.addEventListener('pointerdown', at); svg.addEventListener('pointerleave', hide);
+  }
+  function frame(inner) {
+    return `<svg viewBox="0 0 ${W} ${H}" role="img">${inner}<line class="cross" y1="${M.t}" y2="${H - M.b}" stroke="var(--muted)" stroke-width="1" style="display:none"/><g class="hi"></g></svg><div class="tip"></div>`;
+  }
+
+  function chartTime(rows) {
+    const box = $('cTime');
+    if (!rows.length) { box.innerHTML = '<div class="empty">No readings</div>'; return; }
+    const Y = yScale(rows);
+    let t0 = +rows[0].t, t1 = +rows[rows.length - 1].t;
+    if (t1 - t0 < 864e5) { t0 -= 432e5; t1 += 432e5; }
+    const x = t => M.l + 6 + (W - M.l - M.r - 12) * (t - t0) / (t1 - t0);
+    const pts = rows.map(r => ({ r, x: x(+r.t), ys: Y.y(r.systolic), yd: Y.y(r.diastolic) }));
+    // 7-day trailing average
+    const avS = [], avD = [];
+    rows.forEach((r, i) => {
+      const w = rows.filter(q => q.t <= r.t && +r.t - q.t < 7 * 864e5);
+      avS.push([x(+r.t), Y.y(st(w.map(q => q.systolic)).m)]); avD.push([x(+r.t), Y.y(st(w.map(q => q.diastolic)).m)]);
+    });
+    // x ticks
+    let ticks = '';
+    const span = t1 - t0, n = 4;
+    for (let i = 0; i <= n; i++) {
+      const tt = t0 + span * i / n, d = new Date(tt);
+      const lab = span > 300 * 864e5 ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      ticks += `<text x="${x(tt)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === n ? 'end' : 'middle'}">${lab}</text>`;
+    }
+    box.innerHTML = frame(grid(Y) + ticks + dots(pts) +
+      (rows.length > 2 ? `<path d="${path(avS)}" fill="none" stroke="var(--s1)" stroke-width="2"/><path d="${path(avD)}" fill="none" stroke="var(--s2)" stroke-width="2"/>` : ''));
+    attachTip(box, pts, true);
+  }
+
+  function chartHour(rows) {
+    const box = $('cHour');
+    if (!rows.length) { box.innerHTML = '<div class="empty">No readings</div>'; return; }
+    const Y = yScale(rows);
+    const hr = r => r.t.getHours() + r.t.getMinutes() / 60;
+    const x = h => M.l + 6 + (W - M.l - M.r - 12) * h / 24;
+    const pts = rows.map(r => ({ r, x: x(hr(r)), ys: Y.y(r.systolic), yd: Y.y(r.diastolic) }));
+    const avS = [], avD = [];
+    for (let h = 0; h < 24; h++) {
+      const w = rows.filter(r => r.t.getHours() === h); if (!w.length) continue;
+      avS.push([x(h + 0.5), Y.y(st(w.map(r => r.systolic)).m)]); avD.push([x(h + 0.5), Y.y(st(w.map(r => r.diastolic)).m)]);
+    }
+    let ticks = '';
+    for (let h = 0; h <= 24; h += 6) ticks += `<text x="${x(h)}" y="${H - 8}" text-anchor="${h === 0 ? 'start' : h === 24 ? 'end' : 'middle'}">${String(h).padStart(2, '0')}:00</text>`;
+    box.innerHTML = frame(grid(Y) + ticks + dots(pts) +
+      `<path d="${path(avS)}" fill="none" stroke="var(--s1)" stroke-width="2"/><path d="${path(avD)}" fill="none" stroke="var(--s2)" stroke-width="2"/>`);
+    attachTip(box, pts, true);
+  }
+
+  function compare(rows) {
+    const g = GROUPS[$('grp').value];
+    const map = new Map();
+    rows.forEach(r => { const k = g(r); if (!map.has(k)) map.set(k, []); map.get(k).push(r); });
+    const keys = [...map.keys()].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+    const stats = keys.map(k => { const w = map.get(k); return { k, n: w.length, S: st(w.map(r => r.systolic)), D: st(w.map(r => r.diastolic)), P: st(w.map(r => r.pulse)), hi: w.filter(r => r.systolic >= 135 || r.diastolic >= 85).length }; });
+
+    $('tGrp').innerHTML = `<tr><th>Group</th><th>n</th><th>Systolic</th><th>Diastolic</th><th>Pulse</th><th>≥135/85</th></tr>` +
+      (stats.length ? stats.map(s => `<tr><td>${esc(s.k)}</td><td>${s.n}</td><td>${f0(s.S.m)} ± ${f1(s.S.sd)}</td><td>${f0(s.D.m)} ± ${f1(s.D.sd)}</td><td>${s.P.n ? f0(s.P.m) + ' ± ' + f1(s.P.sd) : '–'}</td><td>${Math.round(100 * s.hi / s.n)}%</td></tr>`).join('')
+        : '<tr><td colspan="6" class="empty">No readings</td></tr>');
+
+    const box = $('cGrp');
+    if (!stats.length) { box.innerHTML = ''; return; }
+    const rowH = 34, h = M.t + stats.length * rowH + 22, L = 112;
+    let lo = Math.min(...stats.map(s => s.D.m - s.D.sd)), hi = Math.max(...stats.map(s => s.S.m + s.S.sd));
+    lo = Math.floor((Math.min(lo, 80) - 5) / 10) * 10; hi = Math.ceil((Math.max(hi, 140) + 5) / 10) * 10;
+    const x = v => L + (W - L - M.r) * (v - lo) / (hi - lo);
+    let s = '';
+    for (let v = lo; v <= hi; v += 10) s += `<line x1="${x(v)}" x2="${x(v)}" y1="${M.t}" y2="${h - 22}" stroke="var(--grid)"/>` + (v % 20 === 0 ? `<text x="${x(v)}" y="${h - 6}" text-anchor="middle">${v}</text>` : '');
+    [135, 85].forEach(v => { if (v > lo && v < hi) s += `<line x1="${x(v)}" x2="${x(v)}" y1="${M.t}" y2="${h - 22}" stroke="var(--ref)" stroke-dasharray="4 4"/>`; });
+    stats.forEach((g2, i) => {
+      const cy = M.t + i * rowH + rowH / 2;
+      s += `<text x="0" y="${cy + 4}" style="fill:var(--fg)">${esc(g2.k)} <tspan style="fill:var(--muted)">(${g2.n})</tspan></text>`;
+      [[g2.S, 'var(--s1)'], [g2.D, 'var(--s2)']].forEach(([q, c]) => {
+        s += `<line x1="${x(q.m - q.sd)}" x2="${x(q.m + q.sd)}" y1="${cy}" y2="${cy}" stroke="${c}" stroke-width="2" stroke-linecap="round"/>` +
+             `<circle cx="${x(q.m)}" cy="${cy}" r="5" fill="${c}" stroke="var(--card)" stroke-width="2"><title>${f0(q.m)} ± ${f1(q.sd)}</title></circle>`;
+      });
+    });
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${h}">${s}</svg>`;
+  }
+
+  function tableAll(rows) {
+    $('tAll').innerHTML = `<tr><th>Time</th><th>BP</th><th>Pulse</th><th>Device</th><th>Source</th><th>Checklist</th><th>Comment</th></tr>` +
+      [...rows].reverse().map(r => `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td><td>${siteName(r.site)}</td><td>${r.source === 'device_memory' ? 'Imported' : 'New'}</td><td>${chkState(r) === 'No checklist' ? '' : CHK.filter(k => r[k] === 1).length + '/3'}</td><td>${esc(r.comment)}</td></tr>`).join('');
+  }
+
+  /* ---------- test: regression on daily means with AR(1) errors ---------- */
+  function lgamma(x) {
+    const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+    let y = x, t = x + 5.5; t -= (x + 0.5) * Math.log(t); let ser = 1.000000000190015;
+    for (const k of c) ser += k / ++y;
+    return -t + Math.log(2.5066282746310005 * ser / x);
+  }
+  function betacf(a, b, x) {
+    let qab = a + b, qap = a + 1, qam = a - 1, c = 1, d = 1 - qab * x / qap;
+    if (Math.abs(d) < 1e-30) d = 1e-30; d = 1 / d; let h = d;
+    for (let m = 1; m <= 200; m++) {
+      const m2 = 2 * m; let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+      d = 1 + aa * d; if (Math.abs(d) < 1e-30) d = 1e-30; c = 1 + aa / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d; h *= d * c;
+      aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+      d = 1 + aa * d; if (Math.abs(d) < 1e-30) d = 1e-30; c = 1 + aa / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d;
+      const del = d * c; h *= del; if (Math.abs(del - 1) < 3e-12) break;
+    }
+    return h;
+  }
+  function ibeta(x, a, b) {
+    if (x <= 0) return 0; if (x >= 1) return 1;
+    const bt = Math.exp(lgamma(a + b) - lgamma(a) - lgamma(b) + a * Math.log(x) + b * Math.log(1 - x));
+    return x < (a + 1) / (a + b + 2) ? bt * betacf(a, b, x) / a : 1 - bt * betacf(b, a, 1 - x) / b;
+  }
+  const pT = (t, df) => ibeta(df / (df + t * t), df / 2, 0.5);
+  function tCrit(df) { let lo = 0, hi = 50; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; pT(m, df) > 0.05 ? lo = m : hi = m; } return (lo + hi) / 2; }
+
+  function inv(A) {
+    const n = A.length, M = A.map((r, i) => [...r, ...r.map((_, j) => +(i === j))]);
+    for (let c = 0; c < n; c++) {
+      let piv = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      [M[c], M[piv]] = [M[piv], M[c]]; const v = M[c][c]; if (Math.abs(v) < 1e-12) return null;
+      for (let j = 0; j < 2 * n; j++) M[c][j] /= v;
+      for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c]; for (let j = 0; j < 2 * n; j++) M[r][j] -= f * M[c][j]; }
+    }
+    return M.map(r => r.slice(n));
+  }
+  function ols(X, y) {
+    const p = X[0].length, XtX = [...Array(p)].map(() => Array(p).fill(0)), Xty = Array(p).fill(0);
+    X.forEach((r, i) => { for (let a = 0; a < p; a++) { Xty[a] += r[a] * y[i]; for (let b = 0; b < p; b++) XtX[a][b] += r[a] * r[b]; } });
+    const V = inv(XtX); if (!V) return null;
+    const beta = V.map(r => r.reduce((s, v, j) => s + v * Xty[j], 0));
+    const sse = X.reduce((s, r, i) => s + (y[i] - r.reduce((t, v, j) => t + v * beta[j], 0)) ** 2, 0);
+    return { beta, V, sse };
+  }
+  // GLS with continuous-time AR(1): corr between days i and j = rho^|gap|; rho by profile likelihood
+  function arReg(days, X, y) {
+    const n = y.length, p = X[0].length;
+    const fit = rho => {
+      const Xs = [], ys = []; let logdet = 0;
+      for (let i = 0; i < n; i++) {
+        if (i === 0 || rho === 0) { Xs.push(X[i]); ys.push(y[i]); continue; }
+        const f = Math.pow(rho, days[i] - days[i - 1]), sc = Math.sqrt(1 - f * f);
+        logdet += Math.log(sc);
+        Xs.push(X[i].map((v, j) => (v - f * X[i - 1][j]) / sc)); ys.push((y[i] - f * y[i - 1]) / sc);
+      }
+      const o = ols(Xs, ys); if (!o) return null;
+      o.ll = -n / 2 * Math.log(o.sse / n) - logdet; o.rho = rho; return o;
+    };
+    let best = null;
+    for (let r = 0; r <= 0.95001; r += 0.01) { const o = fit(Math.round(r * 100) / 100); if (o && (!best || o.ll > best.ll)) best = o; }
+    if (!best) return null;
+    const df = n - p, s2 = best.sse / df, tc = tCrit(df);
+    best.est = best.beta.map((b, j) => { const se = Math.sqrt(s2 * best.V[j][j]); return { b, lo: b - tc * se, hi: b + tc * se, p: pT(b / se, df) }; });
+    return best;
+  }
+
+  const fp = p => isNaN(p) ? '–' : p < 0.001 ? '< .001' : '= ' + p.toFixed(3).replace(/^0/, '');
+  const sgn = x => (x > 0 ? '+' : '') + f1(x);
+
+  function tests(rows) {
+    const out = $('tOut'), cut = $('tDate').value;
+    const m = new Map();
+    rows.forEach(r => { const d = r.measured_at.slice(0, 10); if (!m.has(d)) m.set(d, []); m.get(d).push(r); });
+    const D = [...m.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([d, g]) => ({ d, s: st(g.map(r => r.systolic)).m, dia: st(g.map(r => r.diastolic)).m }));
+    const n = D.length;
+    if (n < 10) { out.innerHTML = `<div class="empty">Needs at least 10 days with readings (now ${n}).</div>`; return; }
+    const day0 = Date.parse(D[0].d), days = D.map(x => Math.round((Date.parse(x.d) - day0) / 864e5));
+    let X, labels;
+    if (cut) {
+      const c = Math.round((Date.parse(cut) - day0) / 864e5);
+      const nb = days.filter(t => t < c).length, na = n - nb;
+      if (nb < 5 || na < 5) { out.innerHTML = `<div class="empty">Needs at least 5 days before and 5 from the change point (now ${nb} and ${na}).</div>`; return; }
+      X = days.map(t => [1, t - c, +(t >= c), Math.max(0, t - c)]);
+      labels = [null, ['Trend before', 30], ['Jump at change point', 1], ['Change in trend', 30]];
+    } else {
+      X = days.map(t => [1, t]);
+      labels = [null, ['Trend', 30]];
+    }
+    const res = [['Systolic', D.map(x => x.s)], ['Diastolic', D.map(x => x.dia)]].map(([name, y]) => [name, arReg(days, X, y)]);
+    if (res.some(r => !r[1])) { out.innerHTML = '<div class="empty">Model could not be fitted.</div>'; return; }
+    let h = `<div class="scroll"><table><tr><th></th><th>Systolic</th><th>Diastolic</th></tr>`;
+    labels.forEach((l, j) => {
+      if (!l) return;
+      const [lab, k] = l, unit = k === 30 ? ' /30 d' : '';
+      h += `<tr><td>${lab}<br><span style="color:var(--muted)">mmHg${unit}</span></td>` + res.map(([, r]) => {
+        const e = r.est[j];
+        return `<td><b>${sgn(e.b * k)}</b><br><span style="color:var(--muted)">[${f1(e.lo * k)}, ${f1(e.hi * k)}]</span><br><span class="${e.p < 0.05 ? 'sig' : ''}">p ${fp(e.p)}</span></td>`;
+      }).join('') + '</tr>';
+    });
+    const sig = e => e.p < 0.05;
+    const cl = e => sig(e) ? 'statistically significant' : 'not statistically clear (could be chance)';
+    const amt = (e, k) => `${f1(Math.abs(e.b * k))} mmHg`;
+    const dir = (e, up, down) => e.b > 0 ? up : down;
+    let txt = '';
+    res.forEach(([name, r]) => {
+      if (!cut) {
+        const e = r.est[1];
+        txt += `<p><b>${name}:</b> ` + (sig(e)
+          ? `${dir(e, 'rises', 'falls')} by about ${amt(e, 30)} per 30 days. This trend is statistically significant.`
+          : `no clear trend over time (${sgn(e.b * 30)} mmHg per 30 days, not statistically clear).`) + '</p>';
+      } else {
+        const tb = r.est[1], j = r.est[2], tc = r.est[3];
+        txt += `<p><b>${name}:</b> at the change point, values ${dir(j, 'jump up', 'drop')} by about ${amt(j, 1)}, which is ${cl(j)}. ` +
+          (sig(tc) ? `Afterwards the trend changes by ${sgn(tc.b * 30)} mmHg per 30 days (statistically significant).`
+                   : `The trend afterwards is not clearly different from before.`) +
+          (sig(tb) ? ` Before the change point, values were already ${dir(tb, 'rising', 'falling')} (${sgn(tb.b * 30)} mmHg per 30 days).` : '') + '</p>';
+      }
+    });
+    if (n < 20) txt += '<p>With fewer than 20 days, the test can only detect large changes.</p>';
+    h += '</table></div>' + `<div class="interp">${txt}</div>` +
+      `<p class="cap" style="margin-top:6px">${n} days · 95% CI in brackets · day-to-day correlation ρ = ${res[0][1].rho.toFixed(2)} (sys), ${res[1][1].rho.toFixed(2)} (dia)</p>`;
+    out.innerHTML = h;
+  }
+  $('tDate').addEventListener('change', update);
+  $('tClr').addEventListener('click', () => { $('tDate').value = ''; update(); });
+
+  function update() {
+    W = Math.max(300, Math.round($('cTime').clientWidth || 700));
+    const rows = filtered();
+    tiles(rows); chartTime(rows); chartHour(rows); compare(rows); tests(rows); tableAll(rows);
+  }
+
+  let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(update, 200); });
+
+  // auto-load phone data if present
+  try { if (localStorage.getItem(KEY)) { $('usePhone').click(); } else update(); } catch (e) { update(); }
+</script>
+</body>
+</html>
