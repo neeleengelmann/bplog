@@ -103,6 +103,7 @@
     </details>
     <div class="field">
       <label class="check"><input id="arr" type="checkbox"> Device showed arrhythmia warning</label>
+      <label class="check" style="margin-top:10px"><input id="posw" type="checkbox"> Device showed position warning</label>
     </div>
     <div class="field">
       <label for="ts" id="tsLabel">Time of measurement</label>
@@ -188,7 +189,7 @@
       `<tr><td>${esc(r.measured_at.replace('T', ' '))}` +
       (r.source === 'device_memory' ? `<br><span class="tag">imported</span>` : '') +
       (r.comment ? `<br><span class="note">${esc(r.comment)}</span>` : '') + `</td>` +
-      `<td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}</td><td>${r.pulse ?? ''}</td>` +
+      `<td>${r.systolic}/${r.diastolic}${r.arrhythmia_warning ? ' ⚠' : ''}${r.position_warning ? ' <span class="note">pos</span>' : ''}</td><td>${r.pulse ?? ''}</td>` +
       `<td>${siteLabel(r.site)}</td>` +
       `<td class="x"><button data-id="${r.id}">✕</button></td></tr>`).join('')
       : '<tr><td colspan="5" style="color:var(--muted)">No entries yet</td></tr>';
@@ -232,12 +233,12 @@
   }
 
   function toCSV() {
-    const head = ['measured_at','systolic','diastolic','pulse','site','arrhythmia_warning','comment','source','device_time','clock_offset_min','entered_at', ...CHECKS.map(c => c[0])].join(',');
+    const head = ['measured_at','systolic','diastolic','pulse','site','arrhythmia_warning','comment','source','device_time','clock_offset_min','entered_at', ...CHECKS.map(c => c[0]), 'position_warning'].join(',');
     const q = v => { v = v ?? ''; v = String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     return [head, ...mem.map(r => [
       r.measured_at, r.systolic, r.diastolic, r.pulse, r.site, r.arrhythmia_warning ?? '',
       r.comment, r.source || 'manual', r.device_time, r.clock_offset_min, r.entered_at,
-      ...CHECKS.map(([k]) => r[k])
+      ...CHECKS.map(([k]) => r[k]), r.position_warning ?? ''
     ].map(q).join(','))].join('\n');
   }
 
@@ -289,6 +290,7 @@
       pulse: $('pul').value === '' ? null : +$('pul').value,
       site: $('site').value,
       arrhythmia_warning: $('arr').checked ? 1 : 0,
+      position_warning: $('posw').checked ? 1 : 0,
       comment: $('note').value.trim(),
       ...Object.fromEntries(CHECKS.map(([k]) => [k, document.querySelector(`[data-chk="${k}"]`).checked ? 1 : 0])),
       source: imp ? 'device_memory' : 'manual',
@@ -299,7 +301,7 @@
     mem.push(entry);
     save();
     try { localStorage.setItem(KEY + '_site', $('site').value); } catch (e) {}
-    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('note').value = ''; chkInputs().forEach(i => i.checked = false); updateChk();
+    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('arr').checked = false; $('posw').checked = false; $('note').value = ''; chkInputs().forEach(i => i.checked = false); updateChk();
     $('msg').className = 'msg';
     if (imp) {
       // keep the device time so the next reading only needs small edits; no auto-download per imported row

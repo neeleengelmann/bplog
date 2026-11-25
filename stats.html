@@ -94,6 +94,8 @@
         <select id="fSrc"><option value="">All</option><option value="manual">New measurements</option><option value="device_memory">Imported old device</option></select></div>
       <div><label for="fArr">Arrhythmia warning</label>
         <select id="fArr"><option value="">Include</option><option value="0">Exclude</option><option value="1">Only these</option></select></div>
+      <div><label for="fPos">Position warning</label>
+        <select id="fPos"><option value="">Include</option><option value="0">Exclude</option><option value="1">Only these</option></select></div>
       <div><label for="fChk">Checklist</label>
         <select id="fChk"><option value="">All</option><option value="all">All 3 ticked</option><option value="notall">Not all ticked</option></select></div>
       <div><label for="fFrom">From</label><input id="fFrom" type="date"></div>
@@ -129,6 +131,7 @@
         <option value="src">by source</option>
         <option value="chk">by checklist</option>
         <option value="arr">by arrhythmia warning</option>
+        <option value="pos">by position warning</option>
       </select>
     </div>
     <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Systolic</span><span><i class="sw" style="background:var(--s2)"></i>Diastolic</span><span style="color:var(--muted)">Dot: mean · bar: ± 1 SD</span></div>
@@ -183,7 +186,7 @@
     const o = {
       measured_at: String(r.measured_at || '').slice(0, 16),
       systolic: num(r.systolic), diastolic: num(r.diastolic), pulse: num(r.pulse),
-      site: r.site || '', arrhythmia_warning: num(r.arrhythmia_warning) || 0,
+      site: r.site || '', arrhythmia_warning: num(r.arrhythmia_warning) || 0, position_warning: num(r.position_warning),
       comment: r.comment || '', source: r.source || 'manual',
       device_time: r.device_time || '', entered_at: r.entered_at || ''
     };
@@ -236,21 +239,23 @@
     tod: r => tod(r),
     src: r => r.source === 'device_memory' ? 'Imported' : 'New',
     chk: r => chkState(r),
-    arr: r => r.arrhythmia_warning ? 'Warning' : 'No warning'
+    arr: r => r.arrhythmia_warning ? 'Warning' : 'No warning',
+    pos: r => r.position_warning ? 'Position warning' : 'No position warning'
   };
-  const ORDER = ['Upper arm', 'Wrist', 'Morning', 'Afternoon', 'Evening', 'Night', 'New', 'Imported', 'All 3 ticked', 'Not all ticked', 'No checklist', 'No warning', 'Warning', 'Unknown'];
+  const ORDER = ['Upper arm', 'Wrist', 'Morning', 'Afternoon', 'Evening', 'Night', 'New', 'Imported', 'All 3 ticked', 'Not all ticked', 'No checklist', 'No warning', 'Warning', 'No position warning', 'Position warning', 'Unknown'];
 
   function filtered() {
-    const s = $('fSite').value, t = $('fTod').value, src = $('fSrc').value, a = $('fArr').value, c = $('fChk').value;
+    const s = $('fSite').value, t = $('fTod').value, src = $('fSrc').value, a = $('fArr').value, c = $('fChk').value, pw = $('fPos').value;
     const from = $('fFrom').value, to = $('fTo').value;
     return data.filter(r =>
       (!s || r.site === s) && (!t || tod(r) === t) && (!src || r.source === src) &&
       (a === '' || String(r.arrhythmia_warning) === a) &&
+      (pw === '' || String(r.position_warning ? 1 : 0) === pw) &&
       (!c || (c === 'all' ? chkState(r) === 'All 3 ticked' : chkState(r) === 'Not all ticked')) &&
       (!from || r.measured_at.slice(0, 10) >= from) && (!to || r.measured_at.slice(0, 10) <= to));
   }
-  ['fSite', 'fTod', 'fSrc', 'fArr', 'fChk', 'fFrom', 'fTo', 'grp'].forEach(id => $(id).addEventListener('change', update));
-  $('clearF').addEventListener('click', () => { ['fSite', 'fTod', 'fSrc', 'fArr', 'fChk', 'fFrom', 'fTo'].forEach(id => $(id).value = ''); update(); });
+  ['fSite', 'fTod', 'fSrc', 'fArr', 'fPos', 'fChk', 'fFrom', 'fTo', 'grp'].forEach(id => $(id).addEventListener('change', update));
+  $('clearF').addEventListener('click', () => { ['fSite', 'fTod', 'fSrc', 'fArr', 'fPos', 'fChk', 'fFrom', 'fTo'].forEach(id => $(id).value = ''); update(); });
 
   /* ---------- stats ---------- */
   function st(arr) {
@@ -309,7 +314,7 @@
   }
   function tipHTML(r) {
     return `<b>${esc(r.measured_at.replace('T', ' '))}</b><br>${r.systolic}/${r.diastolic}${r.pulse != null ? ' · pulse ' + r.pulse : ''}` +
-      `<br>${siteName(r.site)} · ${tod(r)}${r.source === 'device_memory' ? ' · imported' : ''}${r.arrhythmia_warning ? ' · ⚠ arrhythmia' : ''}` +
+      `<br>${siteName(r.site)} · ${tod(r)}${r.source === 'device_memory' ? ' · imported' : ''}${r.arrhythmia_warning ? ' · ⚠ arrhythmia' : ''}${r.position_warning ? ' · position warning' : ''}` +
       (r.comment ? `<br><i>${esc(r.comment)}</i>` : '');
   }
   function attachTip(box, pts, guideX) {
