@@ -12,6 +12,7 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg:#141414; --fg:#eee; --muted:#9a9a9a; --line:#333; --accent:#60a5fa; --card:#1e1e1e; --warn:#f87171; --imp:#a78bfa; }
   }
+  a.nav { display:inline-block; font-size:15px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; color:var(--accent); text-decoration:none; background:var(--card); margin-bottom:12px; }
   * { box-sizing:border-box; }
   body { margin:0; font:16px/1.4 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   main { max-width:480px; margin:0 auto; padding:16px; }
@@ -59,6 +60,7 @@
 <main>
   <h1>Blood pressure log</h1>
   <div class="sub">Entries are stored only in this browser on this device. Nothing is sent anywhere.</div>
+  <a class="nav" href="stats.html">📊 Stats</a>
 
   <div class="tabs">
     <button id="tabNew" class="on" type="button">New measurement</button>

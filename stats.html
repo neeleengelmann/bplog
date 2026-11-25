@@ -17,6 +17,7 @@
       --accent:#60a5fa; --s1:#338ced; --s2:#e76624; --ref:#777; --warn:#f87171;
     }
   }
+  a.nav { display:inline-block; font-size:15px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; color:var(--accent); text-decoration:none; background:var(--card); margin-bottom:12px; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.4 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   main { max-width:760px; margin:0 auto; padding:16px; }
@@ -69,6 +70,7 @@
 </head>
 <body>
 <main>
+  <a class="nav" id="back" href="./">← Back to log</a>
   <h1>Blood pressure stats</h1>
   <div class="sub">Everything is calculated on this device. Nothing is sent anywhere.</div>
 
@@ -155,6 +157,7 @@
 
 <script>
   const KEY = 'bp_entries_v1';
+  try { const ref = document.referrer; if (ref && ref.startsWith(location.origin) && !ref.includes('stats.html')) document.getElementById('back').href = ref; } catch (e) {}
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const CHK = ['chk_no_food_30min', 'chk_rest_5min', 'chk_correct_position'];
