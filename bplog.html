@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BP Log</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --line:#ddd; --accent:#2563eb; --card:#fff; --warn:#b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141414; --fg:#eee; --muted:#9a9a9a; --line:#333; --accent:#60a5fa; --card:#1e1e1e; --warn:#f87171; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.4 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:480px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  input { width:100%; font-size:18px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
+  .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px; }
+  .row > div { min-width:0; }
+  .field { margin-bottom:10px; }
+  button { font-size:16px; padding:12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); width:100%; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .msg { font-size:14px; min-height:20px; margin-top:8px; }
+  .msg.err { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  td.x { text-align:right; }
+  td.x button { width:auto; padding:2px 8px; font-size:13px; }
+  textarea { width:100%; height:120px; font:12px monospace; margin-top:8px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px; display:none; }
+  .confirm { display:none; margin-top:8px; }
+  .confirm.show { display:grid; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Blood pressure log</h1>
+  <div class="sub">Test version. Entries are stored only in this browser on this device. Nothing is sent anywhere.</div>
+
+  <form class="card" id="f">
+    <div class="field">
+      <label for="pid">Participant ID</label>
+      <input id="pid" autocomplete="off" required>
+    </div>
+    <div class="row">
+      <div><label for="sys">Systolic</label><input id="sys" type="number" inputmode="numeric" min="50" max="260" required></div>
+      <div><label for="dia">Diastolic</label><input id="dia" type="number" inputmode="numeric" min="30" max="160" required></div>
+      <div><label for="pul">Pulse</label><input id="pul" type="number" inputmode="numeric" min="30" max="220"></div>
+    </div>
+    <div class="field">
+      <label for="ts">Time of measurement</label>
+      <input id="ts" type="datetime-local" required>
+    </div>
+    <button class="primary" type="submit">Save entry</button>
+    <div class="msg" id="msg"></div>
+  </form>
+
+  <div class="card">
+    <button class="primary" id="dl" style="margin-bottom:8px">Download CSV</button>
+    <div class="btns">
+      <button id="copy">Copy CSV</button>
+      <button id="clear">Delete all</button>
+    </div>
+    <div class="confirm btns" id="confirm">
+      <button id="yes" style="color:var(--warn)">Yes, delete all</button>
+      <button id="no">Cancel</button>
+    </div>
+    <div class="msg" id="msg2"></div>
+    <textarea id="csv" readonly></textarea>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Time</th><th>BP</th><th>Pulse</th><th></th></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const KEY = 'bp_entries_v1';
+  let mem = [];
+  let storageOk = true;
+
+  function load() {
+    try { mem = JSON.parse(localStorage.getItem(KEY) || '[]'); }
+    catch (e) { storageOk = false; mem = []; }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(mem)); }
+    catch (e) { storageOk = false; }
+  }
+  function nowLocal() {
+    const d = new Date(); d.setSeconds(0, 0);
+    return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+  const $ = id => document.getElementById(id);
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function render() {
+    const rows = [...mem].sort((a, b) => b.measured_at.localeCompare(a.measured_at));
+    $('list').innerHTML = rows.length ? rows.map(r =>
+      `<tr><td>${esc(r.measured_at.replace('T', ' '))}</td><td>${r.systolic}/${r.diastolic}</td><td>${r.pulse ?? ''}</td>` +
+      `<td class="x"><button data-id="${r.id}">✕</button></td></tr>`).join('')
+      : '<tr><td colspan="4" style="color:var(--muted)">No entries yet</td></tr>';
+    if (!storageOk) {
+      $('msg2').className = 'msg err';
+      $('msg2').textContent = 'Browser storage unavailable: entries will be lost when the page closes. Copy the CSV before leaving.';
+    }
+  }
+
+  function toCSV() {
+    const head = 'participant_id,measured_at,systolic,diastolic,pulse,entered_at';
+    const q = v => { v = v ?? ''; v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    return [head, ...mem.map(r => [r.participant_id, r.measured_at, r.systolic, r.diastolic, r.pulse, r.entered_at].map(q).join(','))].join('\n');
+  }
+
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    const sys = +$('sys').value, dia = +$('dia').value;
+    if (dia >= sys) { $('msg').className = 'msg err'; $('msg').textContent = 'Diastolic should be lower than systolic.'; return; }
+    const pid = $('pid').value.trim();
+    mem.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      participant_id: pid,
+      measured_at: $('ts').value,
+      systolic: sys, diastolic: dia,
+      pulse: $('pul').value === '' ? null : +$('pul').value,
+      entered_at: new Date().toISOString()
+    });
+    save();
+    try { localStorage.setItem(KEY + '_pid', pid); } catch (e) {}
+    $('sys').value = ''; $('dia').value = ''; $('pul').value = ''; $('ts').value = nowLocal();
+    $('msg').className = 'msg'; $('msg').textContent = 'Saved.';
+    render();
+  });
+
+  $('list').addEventListener('click', e => {
+    const id = e.target.dataset && e.target.dataset.id;
+    if (!id) return;
+    mem = mem.filter(r => r.id !== id); save(); render();
+  });
+
+  $('copy').addEventListener('click', async () => {
+    const csv = toCSV();
+    $('csv').value = csv; $('csv').style.display = 'block';
+    try { await navigator.clipboard.writeText(csv); $('msg2').className = 'msg'; $('msg2').textContent = `Copied ${mem.length} entries.`; }
+    catch (e) { $('csv').select(); $('msg2').className = 'msg'; $('msg2').textContent = 'Select the text below and copy it manually.'; }
+  });
+
+  $('dl').addEventListener('click', () => {
+    const blob = new Blob([toCSV()], {type: 'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'bp-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  $('clear').addEventListener('click', () => $('confirm').classList.add('show'));
+  $('no').addEventListener('click', () => $('confirm').classList.remove('show'));
+  $('yes').addEventListener('click', () => {
+    mem = []; save(); $('confirm').classList.remove('show'); $('csv').style.display = 'none';
+    $('msg2').className = 'msg'; $('msg2').textContent = 'All entries deleted.'; render();
+  });
+
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch (e) {} }
+  load();
+  try { $('pid').value = localStorage.getItem(KEY + '_pid') || ''; } catch (e) {}
+  $('ts').value = nowLocal();
+  render();
+</script>
+</body>
+</html>
